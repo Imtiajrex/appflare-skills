@@ -3,7 +3,7 @@ name: appflare-handlers
 description: Write Appflare backend handlers, including query (GET) and mutation (POST) endpoints with Zod args, authRequired, middleware and ctx.error, background scheduler tasks enqueued with ctx.scheduler, cron jobs, and storageManager rules for R2 storage. Explains how file paths map to routes, client names and task names. Use when creating or editing endpoints, API logic, auth or role checks, background jobs, scheduled tasks or file-access rules in an Appflare project, or when a route is missing from the generated client.
 metadata:
   author: appflare
-  version: "0.2.55"
+  version: "0.3.0"
 ---
 
 # Appflare handlers
@@ -68,10 +68,10 @@ export const completeTask = mutation({
 ## Rules
 
 - **`args`** is a raw Zod shape (a plain object), not `z.object(...)`. Use `args: {}` for none.
-- **Query args are strings on the wire.** Use `z.coerce.number()`, `z.stringbool()` (never `z.coerce.boolean()`) and `z.coerce.date()`. Put object or array inputs in a mutation instead. Mutation args are JSON, so any Zod type works.
+- **Query args arrive as strings** and are converted to what the schema expects, so `z.boolean()`, `z.number()`, `z.array(z.string())` and object args work in a `query`. `z.coerce.*` still works. Mutation args are JSON, so any Zod type works.
 - **Auth:** `authRequired: true` returns 401 without a session. Otherwise guard with `if (!ctx.user) ctx.error(401, "…")`.
 - **Roles and shared checks:** use `middleware: async (ctx, args, request) => { if (ctx.user?.role !== "admin") ctx.error(403, "Forbidden"); }`. It runs after the auth check and before the handler.
-- **Errors:** `ctx.error(status, message, details?)` throws and responds `{ message, details }` with that status. Other throws become 500.
+- **Errors:** `ctx.error(status, message, details?)` throws and responds `{ message, details }` with that status. Other throws become a sanitized `500 { message: "Internal error", requestId }`, so never rely on a raw `Error` message reaching the client. Constraint failures map automatically (unique → 409, trigger/check → 400).
 - **Return JSON-serializable values.** A `Date` reaches the client as a string.
 - **Realtime-friendly queries:** a subscribed query refreshes only if its handler uses nothing but `ctx.db` reads plus `ctx.user`/`ctx.session`. `ctx.error`, `ctx.$db`, `ctx.storage` or anything that throws on empty results disables pushes, so return `null` instead of `ctx.error(404)` in those queries.
 
@@ -104,6 +104,8 @@ export const nightly = cron({
 - Storage is **denied by default**. Without a `storageManager` returning `true`, even `ctx.storage` calls in your own handlers get 403.
 - `ctx.user` is typed non-null but can be `null` without `authRequired`.
 - Writes through `ctx.$db` don't trigger realtime updates. Use `ctx.db`.
+- A mutation that writes several tables should use `ctx.db.batch` or `ctx.db.transaction` so a mid-way failure leaves nothing behind.
+- Files named `*.test.*` or `*.spec.*`, anything in `__tests__/`, and config `exclude` globs are not discovered.
 
 ## References
 

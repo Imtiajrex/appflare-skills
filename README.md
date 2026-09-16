@@ -23,7 +23,7 @@ The [skills CLI](https://github.com/vercel-labs/skills) asks which agents to ins
 | [`appflare`](skills/appflare/SKILL.md) | Working in any Appflare project. Covers the mental model, the dev loop and which skill to load next |
 | [`appflare-schema`](skills/appflare-schema/SKILL.md) | Adding or changing tables, columns, enums, JSON columns or relations, and running migrations |
 | [`appflare-handlers`](skills/appflare-handlers/SKILL.md) | Writing `query`, `mutation`, `scheduler`, `cron` or `storageManager` handlers |
-| [`appflare-querying`](skills/appflare-querying/SKILL.md) | Reading or writing data with `ctx.db`: filters, relations, pagination, upserts, aggregates |
+| [`appflare-querying`](skills/appflare-querying/SKILL.md) | Reading or writing data with `ctx.db`: filters, relations, pagination, atomic batches and transactions, SQL expressions, aggregates |
 | [`appflare-client`](skills/appflare-client/SKILL.md) | Calling the backend from a frontend with the generated client, React hooks, realtime, auth or storage |
 | [`appflare-cli-deploy`](skills/appflare-cli-deploy/SKILL.md) | Configuring `appflare.config.ts`, generating, migrating, adding admins and deploying |
 

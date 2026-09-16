@@ -3,7 +3,7 @@ name: appflare
 description: Build and modify Appflare backends, the generate-first framework for Cloudflare Workers that compiles a schema DSL plus query/mutation/scheduler/cron/storageManager handlers into a Hono Worker (D1 + Drizzle, Better Auth, R2, Queues, Cron Triggers, Durable Object realtime, /admin) and a typed client with React hooks. Use when a project contains appflare.config.ts, imports from "appflare", "appflare/react" or "_generated/handlers", or the user mentions Appflare. Covers the dev loop and points to the focused appflare-* skills.
 metadata:
   author: appflare
-  version: "0.2.55"
+  version: "0.3.0"
 ---
 
 # Appflare
@@ -40,9 +40,9 @@ Frontends import `Appflare` from the backend's `_generated/client` and hooks fro
 
 | Task | Skill |
 | --- | --- |
-| Tables, columns, enums, JSON columns, relations, migrations | `appflare-schema` |
+| Tables, columns, enums, JSON columns, indexes, checks, relations, migrations | `appflare-schema` |
 | query / mutation / scheduler / cron / storageManager, auth checks, errors | `appflare-handlers` |
-| `ctx.db` findMany/insert/update/upsert/delete/count/avg, filters, pagination | `appflare-querying` |
+| `ctx.db` reads, writes, batch/transaction, aggregates, filters, pagination | `appflare-querying` |
 | `new Appflare()`, `.run()`, `useQuery`/`useMutation`, realtime, sign-in, uploads | `appflare-client` |
 | `appflare.config.ts`, CLI commands, wrangler bindings, CORS, deploy | `appflare-cli-deploy` |
 
@@ -53,6 +53,9 @@ Frontends import `Appflare` from the backend's `_generated/client` and hooks fro
 - Handlers are discovered only as `export const name = query({...})` (or mutation/scheduler/cron/storageManager). Default exports, function declarations and re-exports are ignored.
 - Route and client names come from file paths: `src/posts.ts#listPosts` becomes `appflare.queries.posts.listPosts`. A leading `queries/` or `mutations/` folder is dropped.
 - Relations create FK fields named `<relation>Id`. Filter and insert with `ownerId`, and read the related row with `with: { owner: true }`.
-- Query args arrive as URL strings. Use `z.coerce.number()`, `z.stringbool()` or `z.coerce.date()` in `query` args.
+- Query args arrive as URL strings and are converted to what the zod schema expects, so plain `z.boolean()`, `z.number()` and `z.array()` work in a `query`.
+- `ctx.db` is strict: `findMany` defaults to 100 rows, unknown `where` keys throw, and `update`/`delete` need a filter (or `allowAll: true`).
+- `ctx.db` writes are atomic, and `ctx.db.batch` / `ctx.db.transaction` extend that across tables. `ctx.$db` remains the raw Drizzle escape hatch.
+- Unhandled errors return a sanitized 500. Use `ctx.error(status, message)` for anything the client should read.
 - `ctx.user` is typed non-null but is `null` for anonymous requests unless `authRequired: true`, and always `null` in scheduler/cron.
 - JSON responses turn `Date` into ISO strings on the client.

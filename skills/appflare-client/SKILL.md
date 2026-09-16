@@ -3,7 +3,7 @@ name: appflare-client
 description: Use the Appflare generated client in frontends, including creating new Appflare() with endpoint, wsEndpoint and bearer-token storage, calling appflare.queries/appflare.mutations with .run() and { data, error }, the React and React Native hooks useQuery, useInfiniteQuery and useMutation from appflare/react with TanStack Query, realtime subscriptions, Better Auth sign-up and sign-in through appflare.auth, and uploads through appflare.storage. Use when wiring a web or mobile app to an Appflare backend, fetching or mutating data from UI code, adding live updates, or implementing login.
 metadata:
   author: appflare
-  version: "0.2.55"
+  version: "0.3.0"
 ---
 
 # Appflare client
@@ -81,7 +81,9 @@ The server needs Better Auth's `bearer()` plugin so responses include `set-auth-
 - `run()` returns `{ data, error }` for HTTP failures and doesn't throw. It **does** throw a `ZodError` if the args fail the route schema on the client.
 - Hooks throw `Error` objects that carry a `status` property, so use TanStack's `error` state.
 - A `Date` returned by a handler arrives as an ISO **string**, even though the type says `Date`.
-- Query args go in the URL, so handlers must coerce numbers and booleans (see appflare-handlers).
+- Query args go in the URL, and the server converts them to the handler's arg types, so numbers, booleans, arrays and objects work without client-side tricks.
+- A route whose handler takes no args (`args: {}`) is callable with no arguments: `route.run()` and `useQuery(route)`.
+- Unhandled server errors return `{ message: "Internal error", requestId }`. Show `error.message` for expected failures (`ctx.error`) and log the `requestId` otherwise. Constraint failures carry a `code` such as `unique_violation` in `error.body`.
 - Realtime needs `wsEndpoint`. `subscribe()` only pushes **changes**; hooks load initial data for you.
 - `useInfiniteQuery` realtime pushes replace only the **first** page.
 - `route.queryKey()` with no args matches all cached variants, which makes it a good key for invalidation.

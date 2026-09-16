@@ -8,9 +8,25 @@ Import with `import { schema, table, v } from "appflare";`
 - `options.enums`: optional `Record<string, EnumDefinition>`.
 - If the entry file exports several schemas, set `schemaDsl.exportName`.
 
-## `table(shape, { sqlName? })`
+## `table(shape, options?)`
 
 `shape` values must be column builders or relation helpers. Anything else throws `Invalid table field`.
+
+| Option | Shape | Notes |
+| --- | --- | --- |
+| `sqlName` | `string` | SQL table name |
+| `indexes` | `{ columns: string[]; unique?: boolean; name?: string }[]` | Composite indexes; `columns` are field names, including inferred FKs |
+| `checks` | `{ name: string; sql: string }[]` | CHECK constraints; `sql` uses SQL column names |
+
+```ts
+accounts: table(
+	{ status: v.string().notNull().default("active"), balanceMinor: v.int().notNull().default(0) },
+	{
+		indexes: [{ columns: ["status", "balanceMinor"] }],
+		checks: [{ name: "accounts_balance_non_negative", sql: "balance_minor >= 0" }],
+	},
+),
+```
 
 ## Builders
 
@@ -46,9 +62,11 @@ JSON element and shape builders map as follows: `v.string()` to string, `v.int()
 | `.sql(name)` | SQL column name |
 | `.array()` | enum array |
 
-## Insert optionality
+## Insert optionality and nullability
 
 A field is optional on insert when it is a primary key, isn't `notNull`, is auto-increment, or has `.default` or `.defaultFn` (including `defaultNow` and `uuid`).
+
+A column with any default is **typed non-null** on select and rejects an explicit `null` on insert, even though the SQL column stays nullable. Add `.nullable()` for columns that really store nulls. Rows written before the default existed can still be `NULL`.
 
 ## Naming strategy
 

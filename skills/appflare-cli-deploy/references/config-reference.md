@@ -5,10 +5,11 @@
 | Key | Required | Default | Notes |
 | --- | --- | --- | --- |
 | `scanDir` | yes | | handler root |
+| `exclude` | no | `[]` | globs (relative to `scanDir`) skipped by discovery; `*.test.*`, `*.spec.*` and `__tests__/` always are |
 | `outDir` | yes | | generated output |
 | `schema` | yes (≥1) | | drizzle-kit schema modules |
 | `schemaDsl` | no | | `{ entry, exportName?, outFile?, typesOutFile?, zodOutFile?, namingStrategy?: "camelToSnake" }` |
-| `database` | yes | | object or array: `{ binding, databaseName, databaseId, previewDatabaseId?, migrationsDir? }` |
+| `database` | yes | | object or array: `{ binding, databaseName, databaseId, previewDatabaseId?, migrationsDir?, query?: { defaultLimit, maxLimit } }` |
 | `kv` | no | `[]` | `{ binding, id, previewId? }` |
 | `r2` | no | `[]` | `{ binding, bucketName, previewBucketName?, jurisdiction? }` |
 | `auth` | yes | | `{ enabled, basePath, options: BetterAuthOptions, clientOptions }` |
@@ -68,3 +69,5 @@
 | `drizzle-kit generate failed` | schema modules not generated, or a drizzle-kit prompt was interrupted |
 | `TypeScript build failed` | type errors in your package (use `--no-build` to isolate) |
 | `Duplicate handler operation discovered` | two handlers resolve to the same route or task name |
+| `Relation '…' is ambiguous` | several `v.one` relations to the same table; give both sides a `relationName` |
+| `Migration name may only contain letters, numbers, - and _` | bad `--name` for `migrate:custom` |

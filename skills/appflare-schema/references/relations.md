@@ -12,6 +12,9 @@ Belongs-to. It adds an FK column on **this** table.
 | `sqlName` | snake_case of field | |
 | `nullable` / `notNull` | NOT NULL | pass `nullable: true` for optional |
 | `onDelete` / `onUpdate` | none | `cascade`, `set null`, `set default`, `restrict`, `no action` |
+| `unique` | false | unique index on the FK (one-to-one) |
+| `index` | false | index on the FK |
+| `relationName` | none | pairs this relation with the `v.many` using the same name |
 
 ```ts
 author: v.one("users"),                       // authorId
@@ -29,6 +32,21 @@ comments: table({ post: v.one("posts") }),       // same postId column
 ```
 
 If the inverse `v.one` uses another name, pass that name: `v.many("comments", "articleId")`.
+
+### Several relations to the same table
+
+```ts
+messages: table({
+	sender: v.one("authors", { relationName: "sender" }),
+	recipient: v.one("authors", { relationName: "recipient", nullable: true }),
+}),
+authors: table({
+	sentMessages: v.many("messages", { relationName: "sender" }),        // reuses senderId
+	receivedMessages: v.many("messages", { relationName: "recipient" }), // reuses recipientId
+}),
+```
+
+Without `relationName`, a `v.many` whose target has several matching `v.one` relations fails generation with a message listing the candidates. A `relationName` with no matching `v.one` fails too.
 
 ## `v.manyToMany(targetTable, options?)`
 

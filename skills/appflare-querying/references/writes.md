@@ -1,6 +1,6 @@
 # Writes reference
 
-All write methods return `Promise<Row[]>`.
+All write methods return `Promise<Row[]>`. Every `ctx.db` write is atomic: it compiles to statements that run in one D1 batch.
 
 ## insert
 
@@ -9,6 +9,7 @@ await ctx.db.table.insert({ values: row | row[] });
 ```
 
 - Applies runtime defaults (`v.uuid()`, `.defaultFn()`, `.defaultNow()`) and serializes JSON columns.
+- Large arrays are split into several statements inside the same batch to stay under D1's 100 bound-parameter limit.
 - Relation fields can be passed inside `values`:
 
 | Relation | `id` item | `{ id, ... }` item | `{ ... }` (no id) item |
@@ -22,10 +23,18 @@ The returned rows include the relation keys you passed (hydrated rows). Passing 
 ## update
 
 ```ts
-await ctx.db.table.update({ where, set, limit? });
+await ctx.db.table.update({ where, set, limit?, allowAll?, expectRows? });
 ```
 
-- Without `where`, **all rows** are updated.
+- A missing or empty `where` **throws** unless `allowAll: true`.
+- `set` accepts plain values or SQL expressions.
+
+```ts
+import { decrement, increment, now, raw } from "appflare";
+
+set: { balance: decrement(50), views: increment(), updatedAt: now(), score: raw(sql`max(${t.score}, 0)`) }
+```
+
 - Many-to-many fields in `set`:
 
 ```ts
@@ -34,25 +43,66 @@ set: { labels: { items: [3], mode: "overwrite" } }                          // r
 set: { labels: [1, 2] }                                                     // shorthand = merge
 ```
 
-Objects without an id are inserted into the target table first.
+Objects without an id are inserted into the target table first. Link changes run before the row update in the same batch, so they match the same rows as `where`.
+
+## expectRows
+
+```ts
+await ctx.db.accounts.update({
+	where: { id, balance: { gte: amount } },
+	set: { balance: decrement(amount) },
+	expectRows: 1,              // or { min: 1 }, { min: 1, max: 10 }
+});
+```
+
+Out-of-range row counts throw `AppflareConflictError` and write nothing — optimistic concurrency without a transaction. Works on `update`, `upsert` and `delete`, including inside `batch`, where it rolls back the whole batch.
+
+## batch
+
+```ts
+const [rowsA, rowsB] = await ctx.db.batch((tx) => [
+	tx.ledgerEntries.insert({ values: entries }),
+	tx.accounts.update({ where: { id }, set: { balance: decrement(cents) }, expectRows: 1 }),
+]);
+```
+
+The callback must return the plans synchronously; results come back in the same order. Any failure writes nothing and publishes no mutation events.
+
+## transaction
+
+```ts
+const result = await ctx.db.transaction(async (tx) => {
+	const account = await tx.accounts.findFirst({ where: { id } }); // reads hit the committed DB
+	if (!account) ctx.error(404, "Not found");
+	const handle = tx.accounts.update({ where: { id }, set: { status: "closed" } });
+	await ctx.scheduler.enqueue("jobs/notify", { id });             // flushed after commit
+	return handle;
+});
+result.rows[0].status;
+```
+
+- Writes on `tx` return **handles**, not promises. `handle.rows` throws until the transaction resolves.
+- Reads don't see queued writes: read first, then queue writes.
+- Throwing writes nothing and drops enqueued messages.
+- `batch` and `transaction` cannot be nested.
 
 ## upsert
 
 ```ts
-await ctx.db.table.upsert({ values, target?, set? });
+await ctx.db.table.upsert({ values, target?, set?, expectRows? });
 ```
 
 | Arg | Default |
 | --- | --- |
-| `target` | `["id"]` if the table has `id`, otherwise an error (`Unable to infer conflict target`) |
-| `set` | first element of `values` (undefined keys dropped) |
+| `target` | `["id"]` if the table has `id`, otherwise an error (`could not infer a conflict target`) |
+| `set` | each row's own values (`excluded.<column>`) |
 
-`target` columns need a primary key or unique constraint. For arrays, pass an explicit `set` or upsert rows individually.
+`target` columns need a primary key or unique constraint. Rows that set different columns are split into separate statements.
 
 ## delete
 
 ```ts
-await ctx.db.table.delete({ where?, limit? }); // returns deleted rows; no where = all rows
+await ctx.db.table.delete({ where, limit?, allowAll?, expectRows? }); // returns deleted rows
 ```
 
 ## Ownership-scoped writes
@@ -65,19 +115,18 @@ const [row] = await ctx.db.projects.update({
 if (!row) ctx.error(404, "Project not found");
 ```
 
-## Atomicity
+## Invariants for every row
 
-D1 has no interactive transactions, so nested relation writes and many-to-many updates run sequentially without rollback. For atomic multi-statement writes:
+A batch can't abort on a condition, so rules that must always hold belong in the schema:
 
 ```ts
-await ctx.$db.batch([
-	ctx.$db.insert(schema.orders).values({ id, userId }),
-	ctx.$db.update(schema.inventory).set({ stock: sql`${schema.inventory.stock} - 1` }).where(eq(schema.inventory.sku, sku)),
-]);
+accounts: table({ balance: v.int().notNull().default(0) }, {
+	checks: [{ name: "accounts_balance_non_negative", sql: "balance >= 0" }],
+}),
 ```
 
-`ctx.$db` writes skip runtime defaults (supply ids yourself) and don't emit realtime events.
+Violations surface as `CheckConstraintError`, and `RAISE(ABORT, 'reason')` in a trigger as `TriggerAbortError` (HTTP 400 with your message). Add triggers with `bun appflare migrate:custom --name add_guards`.
 
 ## Realtime
 
-Each `ctx.db` write records `{ kind, table, args, rows }` in `ctx.mutationEvents`. After the mutation, scheduler task or cron job succeeds, subscribed queries on that table whose `where` matches are re-run and pushed.
+Each `ctx.db` write records `{ kind, table, args, rows }` in `ctx.mutationEvents`, published only **after** the write commits. Subscribed queries on that table whose `where` matches are re-run and pushed. `ctx.$db` writes are not recorded.
