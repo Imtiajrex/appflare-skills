@@ -1,9 +1,9 @@
 ---
 name: appflare-client
-description: Use the Appflare generated client in frontends, including creating new Appflare() with endpoint, wsEndpoint and bearer-token storage, calling appflare.queries/appflare.mutations with .run() and { data, error }, the React and React Native hooks useQuery, useInfiniteQuery and useMutation from appflare/react with TanStack Query, realtime subscriptions, Better Auth sign-up and sign-in through appflare.auth, and uploads through appflare.storage. Use when wiring a web or mobile app to an Appflare backend, fetching or mutating data from UI code, adding live updates, or implementing login.
+description: Use the Appflare generated client in frontends, including creating new Appflare() with endpoint, wsEndpoint and bearer-token storage, calling appflare.queries/appflare.mutations with .run() and { data, error }, the React and React Native hooks useQuery, useInfiniteQuery and useMutation from appflare/react with TanStack Query, typed optimistic updates and cache writes (optimistic, updateCache, useAppflareCache), persisting the query cache to localStorage or AsyncStorage for local-first loading, realtime subscriptions, Better Auth sign-up and sign-in through appflare.auth, and uploads through appflare.storage. Use when wiring a web or mobile app to an Appflare backend, fetching or mutating data from UI code, making the UI update instantly before the server answers, caching data offline, adding live updates, or implementing login.
 metadata:
   author: appflare
-  version: "0.3.0"
+  version: "0.4.0"
 ---
 
 # Appflare client
@@ -12,7 +12,7 @@ metadata:
 
 - [ ] Find the generated client: `<backend package>/_generated/client`, or `dist/_generated/client` when the backend builds with `tsc`
 - [ ] Create **one** shared client module (e.g. `lib/appflare.ts`)
-- [ ] Wrap the React tree in `QueryClientProvider`
+- [ ] Wrap the React tree in `AppflareQueryProvider` (or TanStack's `QueryClientProvider`)
 - [ ] Call routes through `appflare.queries.*` and `appflare.mutations.*`. Names mirror handler file paths
 - [ ] After backend changes, run `bun appflare dev` in the backend so the client types update
 
@@ -44,18 +44,32 @@ await appflare.mutations.tasks.completeTask.run({ id: 42 });
 ## React
 
 ```tsx
-import { useQueryClient } from "@tanstack/react-query";
+// App root: cache persisted across reloads, shown before the network answers
+import { AppflareQueryProvider, createAppflareQueryClient } from "appflare/react";
+
+const queryClient = createAppflareQueryClient();
+
+<AppflareQueryProvider client={queryClient} persist={{ storage: localStorage }}>
+	<App />
+</AppflareQueryProvider>;
+```
+
+```tsx
 import { useMutation, useQuery } from "appflare/react";
 import { appflare } from "../lib/appflare";
 
+const listTasks = appflare.queries.tasks.listTasks;
+
 export function Tasks({ projectId }: { projectId: string }) {
-	const queryClient = useQueryClient();
-	const tasks = useQuery(appflare.queries.tasks.listTasks, { projectId }, {
+	const tasks = useQuery(listTasks, { projectId }, {
 		realtime: { enabled: true },
 	});
 	const complete = useMutation(appflare.mutations.tasks.completeTask, {
-		onSuccess: () =>
-			queryClient.invalidateQueries({ queryKey: appflare.queries.tasks.listTasks.queryKey() }),
+		// Typed from the routes; rolled back automatically if the mutation fails.
+		optimistic: ({ id }, cache) =>
+			cache.update(listTasks, (list) =>
+				list.map((t) => (t.id === id ? { ...t, done: true } : t)),
+			),
 	});
 
 	if (tasks.isLoading) return <p>Loading…</p>;
@@ -65,6 +79,14 @@ export function Tasks({ projectId }: { projectId: string }) {
 	));
 }
 ```
+
+Optimistic and cache rules:
+
+- `optimistic(args, cache)` runs before the request. Its writes survive refetches and realtime pushes while pending, roll back on error, and the touched queries refetch once it settles (`reconcile: false` to skip).
+- `updateCache(result, args, cache)` writes the server response; `invalidates: [route]` refetches routes after success.
+- `useAppflareCache()` gives the same typed `cache` anywhere: `get`, `set`, `update`, `getInfinite`, `updateInfinite`, `updatePages`, `invalidate`, `optimistic`.
+- `cache.update(route, updater)` changes every cached args variant; `cache.update(route, args, updater)` only one. Use `updatePages` / `updateInfinite` for `useInfiniteQuery` data.
+- Persistence saves server data only, never pending optimistic writes. Bump `persist.buster` when cached data shapes change.
 
 ## Auth
 
@@ -92,5 +114,5 @@ The server needs Better Auth's `bearer()` plugin so responses include `set-auth-
 
 ## References
 
-- Read [references/react-hooks.md](references/react-hooks.md) when you need hook options (queryOptions, requestOptions, realtime callbacks), infinite pagination, or client types such as `InferRouteInput` and `InferRouteOutput`.
+- Read [references/react-hooks.md](references/react-hooks.md) when you need hook options (queryOptions, requestOptions, realtime callbacks), infinite pagination, the full optimistic/cache API, persistence options (AsyncStorage, `maxAge`, `buster`, `shouldPersist`), or client types such as `InferRouteInput`, `InferRouteOutput` and `InferQueryData`.
 - Read [references/auth.md](references/auth.md) when implementing sign-in or sign-up, OTP or admin client plugins, token storage, role-aware UI, or storage uploads from the client.
